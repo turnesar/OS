@@ -1,0 +1,462 @@
+#!/bin/bash
+# Sarah Turner 
+# Project 1 CS344, Due April 22
+# code for removing last newline found at : 
+# https://stackoverflow.com/questions/1654021/how-can-i-delete-a-newline-if-it-is-the-last-character-in-a-file
+###################################################
+
+#removes all temp files on exits, original exit status retained
+trap "ex=\$?; rm -f *.t; exit \$ex" 0  
+
+#removes all temp files on abnormal exit, 
+#hangup, interrupt, quit, abort 
+trap "echo 'its a trap!'; rm -f *.t; exit 1" 1 2 3 6 
+
+# NAME
+# 	getDims - sets global variables to row and col values  
+# SYNOPSIS
+#		getDims [MATRIX]
+# DESCRIPTION
+#		uses wc functions to get rows and columns of argument 1
+###############################################################
+function getDims(){
+       # echo -e "In getDims"
+       # cat $1 
+        ROWS=0
+        ROWS=$( wc -l < "$1" )              #count number of lines gives rows
+       # echo -e "rows: $ROWS"  
+        COLS=0
+        COLS=$(head -n1 "$1"| wc -w)        #word count of top row gives columns
+       # echo "cols: $COLS" 
+       # echo -e "leaving getDims\n"
+        return 0
+}
+
+# NAME
+# 	dims - print the dimensions of matrix passed by stdin or file 
+# SYNOPSIS
+#		dims [MATRIX]
+# DESCRIPTION
+#		print the dimensions of the matrix as number of rows, then space, then
+#		number of columns
+#       prints values from global variables in getDims. global variables set before 
+#############################################################################
+dims(){
+       # echo -e "in dims\n"
+        echo -e "$ROWS $COLS" 
+        #echo -e "exiting dims\n"
+        exit 0
+}
+
+# NAME
+#   transpose - reflect elements of the matrix along the main diagonal, passed by stdin or file     
+# SYNOPSIS
+#   transpose [MATRIX] 
+# DESCRIPTION
+#   takes a MxN matrix and makes it a NxM matrix and the values along the
+#   main diagonal will remain unchanged, example below:
+#   1 2 3           1 4 7               
+#   4 5 6    ---->  2 5 8
+#   7 8 9           3 6 9
+#   Take matrix file and put it into one big column, with columns on top of each other.
+#   Then cut the columns using head and tail out of the file based on row height to get a
+#   single row in column form. Then translate that column to a row and add to the final file.
+#   output the final file 
+#   source for line tail-n +$i file | head -n $((j-i)+1) is:
+#   https://unix.stackexchange.com/questions/47407/cat-line-x-to-line-y-on-a-huge-file/47424#47424
+############################################################################################
+transpose(){
+       # echo "In transpose"
+        local numCols=0 
+        tempCols="tempCols$$.t" 
+        newMatrix="newMatrix$$.t"
+        line="line$$.t"                                     #used to transfer a new row back
+       # echo "Entering first while loop"
+        while [ $numCols -le $COLS ]                        #first we cut each column and put them in
+        do                                                  #one column in the tempCols file 
+            ((numCols++))
+            cat $1 | cut -f $numCols >> $tempCols
+        done
+       # echo "tempCols:"
+       # cat $tempCols
+        local total=$((ROWS * COLS))                        #reflects number of lines in our tempCol 
+        i=1                                                 #top of lines used for tail    
+        j=$ROWS                                             #bottom used for head calc 
+        k=0                                                 #used to offset our head  
+       # echo "Entering second while loop"
+        while [ $j -le $total ]                             #so we don't go past the last number 
+        do 
+            k=$(expr $j - $i)                               #bottom row desired - top row desired + 1  
+            ((k++))                                         #k is our head calc  
+            tail -n +$i $tempCols | head -n $k  > $line     #cutting our previous cols, ref in description above 
+            head -c -1 $line > $line.tmp                    #remove the last \n 
+            mv $line.tmp $line                              #ref for code at top
+            rm -f line.tmp
+           # cat -A $line
+           # echo -e "\n"
+            cat $line | tr '\n' '\t' >> $newMatrix          #translate to row 
+            echo "" >> $newMatrix                           #add a \n after row
+           # cat -A $newMatrix
+            i=$(expr $i + $ROWS)                            #calculating the top i and bottom j                      
+            j=$(expr $j + $ROWS)                            #of the new rows based on columns
+        done 
+       # echo -e "final transpose:\n" 
+        cat  $newMatrix
+       # echo -e "original:\n"
+       # cat  $1
+       # echo -e "exiting transpose"
+        exit 0
+}
+
+# NAME 
+#   mean - calculate averages of columns and then show as 1xN row vector 
+# SYNOPSIS
+#   mean [MATRIX] 
+# DESCRIPTION
+#   example:
+#   1 2 3 4  -->  3 4 5 6 
+#   5 6 7 8 
+#   converts matrix into one column file one column at a time, sums the column computes the average
+#   for each column then adds it to the final file in a single row. prints the final file.  
+#   reference for removing newline at top of file. 
+######################################################################################
+mean(){
+
+       # echo "in mean()"
+        tempFile="tempFile$$.t"                         #used for columns
+        meanFile="meanFile$$.t"                         #used to print 
+        local sum=0
+        local avg=0 
+        local numCols=1
+       # echo "entering loop"
+
+        while [ $numCols -le $COLS ]                        #iterate through cols
+        do 
+            cat $1 | cut -f$numCols > $tempFile             #column into tempFile
+           # echo -e "tempFile $numCols of $COLS: \n"
+           # cat -A $tempFile 
+           # echo -e "Entering second loop\n"
+        
+            while read num                  
+            do 
+                sum=`expr $sum + $num`                      #sum the tempfile 
+            done < $tempFile
+           # echo -e "sum of column $numCols: $sum \n"
+            avg=$(((sum + (ROWS/2)*( (sum>0)*2-1 )) / ROWS))  #avg from program description 
+           # echo -e "avg of column $numCols: $avg \n"
+            echo -e "$avg\t" >> $meanFile
+            if [ $numCols -lt $COLS ]                       #remove \n on all but last
+            then
+                head -c -1 $meanFile > $meanFile.tmp        #ref for code at top              
+                mv $meanFile.tmp $meanFile
+                rm -f meanFile.tmp 
+            fi  
+           # echo -e "current meanFile\n"
+           # cat -A $meanFile 
+            sum=0
+            avg=0
+            ((numCols++))
+       done
+
+       head -c -2 $meanFile > $meanFile.tmp        #ref for code at top, removes tab adds newline               
+       mv $meanFile.tmp $meanFile
+       rm -f meanFile.tmp 
+       echo "" >> $meanFile
+       # echo -e "Final meanfile\n"
+        cat  $meanFile
+        exit 0 
+}
+
+# NAME
+#   add - 
+# SNYOPSIS 
+#   add MATRIX_LEFT MATRIX_RIGHT
+# DESCRIPTION 
+#   example:
+#   1 2   +  2 3 -->  3 5      
+#   3 4      4 5      7 9
+#   receives previously validated matrices from main function. Translates both matrices
+#   to a single row. Then iterates through and cuts same field, adds numbers and saves 
+#   output to addFile. Rows in addfile are based on input column length. Prints addfile.
+##########################################################################################
+add(){
+
+       # echo -e "In add()"
+        tempFile1="tempFile1$$.t"
+        tempFile2="tempFile2$$.t"
+        addFile="addFile$$.t"
+       # echo "Entering loop"
+        while read m1                               
+        do
+            echo "$m1" | tr '\n' '\t' >> $tempFile1         #translate all rows to single row for m1 
+        done < $1   
+       # echo "printing m1" 
+       # cat -A $tempFile1
+
+        while read m2    
+        do
+            echo "$m2" | tr '\n' '\t' >> $tempFile2         #translate all rows to single row for m2
+        done < $2   
+       # echo "printing m2" 
+       # cat -A $tempFile2
+
+        local i=1                                           #used to cut number from file by field 
+        local numCols=0                                     #count columns to rearrange final file 
+        local sum=0
+        local num1=0
+        local num2=0
+        local total=$((ROWS * COLS))                        #total number of fields in file 
+        while [ $i -le $total ]                             #while number we cut is <= total number of numbers
+        do
+            num1=$(cat "$tempFile1" | cut -f $i)            #store m1 number in num1 and m2 in num2 
+            num2=$(cat "$tempFile2" | cut -f $i)
+            sum=`expr $num1 + $num2`                        #sum the numbers 
+           # echo -e "first number $i is $num1 + $num2 = $sum\n"  
+            ((numCols++))                                   #progress the column count 
+            if [ $numCols -lt $COLS ]                       #add sum and tab, remove newline 
+            then
+                echo -e "$sum\t" >> $addFile
+                head -c -1 $addFile > $addFile.tmp          #ref for code at top              
+                mv $addFile.tmp $addFile
+                rm -f addFile.tmp 
+            elif [ $numCols -eq $COLS ]                     #add sum and keep newline if we have number of columns required 
+            then
+                echo -e "$sum" >> $addFile   
+                numCols=0                                   #reset column count 
+            fi
+           # echo "current addFile"
+           # cat -A $addFile 
+           # echo ""
+            ((i++))                                         #increment field count 
+            done
+      # echo "final addFile:" 
+        cat $addFile
+
+        exit 0 
+}
+
+# NAME 
+#   multiply -
+# SNYOPSIS
+#   multiply MATRIX_LEFT MATRIX_RIGHT
+# DESCRIPTION: MxN and NxP and produces a MxP matrix 
+#    example:
+#    r1 r2 r3       c1 c4       (r1xc1+r2xc2+r3xc3) (r1xc4+r2xc5+r3xc6)
+#    r4 r5 r6       c2 c5       (r4xc1+r5xc2+r6xc3) (r4xc4+r5xc5+r6xc6)
+#                   c3 c6
+#   Recieves already validated matrices from main. Translates m1 into one big row based r1, r2...end.
+#   Translates m2 into one big row based on column c1, c2...end.Then loops an outer loop based on 
+#   rows in m1, multiplies columns by each row. Upon end of each row, resets row and outputs product
+#   to file.  At end of all columns, increments to next row.
+###################################################################################
+multiply(){
+      # echo -e "In multiply()"
+        tempFile1="tempFile1$$.t"
+        tempCols="tempColsM$$.t"
+        tempFile2="tempFile2$$.t"
+        productFile="productFile$$.t"
+
+        while read m1 
+        do
+            echo "$m1" | tr '\n' '\t' >> $tempFile1         #we translate each row to one large row for m1, so r1 r2... 
+        done < $1   
+      # echo -e "printing m1:\n" 
+      # cat -A $tempFile1
+      # echo ""
+
+        local numCols=1
+        while [ $numCols -le $COLSM2 ]                      #we cut each column and put them in one big column for m2 
+        do                                          
+            cat $2 | cut -f $numCols >> $tempCols
+            ((numCols++))
+        done
+
+        while read m2    
+        do
+            echo "$m2" | tr '\n' '\t' >> $tempFile2         #order the column file to one large row  by col for m2, so c1 c2...
+        done < $tempCols   
+      # echo -e "printing m2:\n" 
+      # cat -A $tempFile2
+      # echo ""
+
+        local i=1                                           #row file cut m1  
+        local j=1                                           #col file cut m2 
+        local numRow=1                                      #count what row in m1 we are in, outer loop
+        local flag=0                                        #flag to be done summing product   
+        local product=0                                     #product 
+        local num1=0                                        #num cut from m1
+        local num2=0                                        #num cut from m2 
+        local count=0                                       #col count product matrix 
+        local total2=$((ROWSM2 * COLSM2))                   #total in m2, used for inner loop           
+                       
+        while [ $numRow -le $ROWSM1 ]                       #while we still have rows in m1  
+        do
+            while [ $j -le $total2 ]                        #while we still have columns in m2   
+            do
+                num1=$(cat "$tempFile1" | cut -f $i)        #cut the values
+                num2=$(cat "$tempFile2" | cut -f $j)   
+              # echo -e "i:$i j:$j\n" 
+              # echo -e "num1: $num1 num2:$num2 \n"
+                product=$(((num1*num2) + product))          #sum prodcuts 
+              # echo -e "product: $product" 
+              # echo -e "row $numRow field $j is $num1 * $num2 = $product\n"  
+                ((i++))
+                ((j++))
+               if [ $i -gt $(($COLSM1 * $numRow)) ]         #if at the end of the row reset the row and set flag to add product       
+               then
+                    i=`expr $i - $COLSM1`
+                    flag=1
+               fi
+
+               if [ $flag -eq 1 ]                           #time to add the product 
+               then
+              # echo -e "product to add is: $product" 
+                flag=0
+                ((count++))
+                        if [ $count -lt $COLSM2 ]           #adding to our file in correct column layout, ref for code at top
+                        then
+                            echo -e "$product\t" >> $productFile
+                            head -c -1 $productFile > $productFile.tmp                         
+                            mv $productFile.tmp $productFile                      
+                            rm -f productFile.tmp
+                           # echo "current productFile:"
+                           # cat -A $productFile 
+                           # echo ""
+                       elif [ $count -eq $COLSM2 ] 
+                       then
+                            echo -e "$product" >> $productFile   
+                            count=0                                                
+                           # echo "current productFile:"
+                           # cat -A $productFile 
+                           # echo ""
+                        fi   
+                 product=0
+               fi      
+               done
+        j=1                                                 #reset j and set i to next row 
+        i=`expr $i + $COLSM1`
+        ((numRow++))
+        done
+
+       # echo "final productFile:" 
+        cat $productFile
+
+        exit 0 
+}
+
+#######################main area for redirects######################
+
+# NAME 
+#  main 
+# SNYOPSIS
+#   ./matrix func [MATRIX] [MATRIX] 
+#        OR
+#   ./matrix func [MATRIX]
+# DESCRIPTION: receives desired function and matrix or matrices.
+#   validates input from user based on number of arguments, readable files,
+#   desired function, and proper matrix math rules.Sets global 
+#   variables rows and cols using internal helper function and 
+#   calls internal functions only after ensuring no error processing 
+#   has occurred. If errors are present, exits with exit 1 
+####################################################################
+
+
+#for our single argument folks
+if [ $1 = "dims" ] || [ $1 = "transpose" ] || [ $1 = "mean" ]
+then
+    # echo -e "creating file \n"
+    matrixFile="matrix0File$$.t"
+    if [ $# -gt 2 ] 
+    then 
+        echo -e "Invalid number of arguments\n" >&2
+        exit 1 
+    fi    
+    if [ $# -eq 1 ] 
+    then 
+        cat > "$matrixFile"
+    elif [ $# -eq 2 ]
+    then
+        matrixFile=$2
+    fi
+    # echo -e "checking file\n"
+    if [ -r "$matrixFile" ]
+    then
+        #  echo -e "main-getting the ROWS and COLS\n" 
+       getDims $matrixFile
+       if [ $1 = "dims" ]
+       then
+        # echo -e "main-running dims()\n" 
+          dims $matrixFile
+       elif [ $1 = "transpose" ]
+       then 
+        #  echo -e "main-running transpose()\n"
+          transpose $matrixFile
+       elif [ $1 = "mean" ]
+       then
+        #  echo -e "main-running mean()\n"
+          mean $matrixFile
+       fi
+    else
+        echo -e "file won't open \n" >&2
+        exit 1
+    fi
+       
+#for our two argument folks 
+elif [ $1 = "add" ] || [ $1 = "multiply" ]
+then 
+    matrixFile1="matrix1File$$.t"
+    matrixFile2="matrix2File$$.t"
+    if [ "$#" -ne 3 ] 
+    then 
+        echo -e "Invalid number of arguments\n" >&2
+        exit 1 
+    fi    
+    if [ "$#" = "3" ]
+    then
+        matrixFile1=$2
+        matrixFile2=$3
+    fi
+   # echo -e "checking file\n"
+    if [ -r $matrixFile1 ] && [ -r $matrixFile2 ]
+    then
+      # echo -e "main-getting the ROWS and COLS\n" 
+       getDims $matrixFile1
+       ROWSM1=$ROWS
+       COLSM1=$COLS
+      # echo -e "main-getting the ROWS and COLS\n" 
+       getDims $matrixFile2
+       ROWSM2=$ROWS
+       COLSM2=$COLS
+       if [ $1 = "add" ]
+       then
+          if [[ $ROWSM1 = $ROWSM2 ]] && [[ $COLSM1 = $COLSM2 ]]
+          then
+           # echo -e "main-running add()\n"
+            add $matrixFile1 $matrixFile2
+          else
+            echo -e "matrices must be the same size to add\n" >&2
+            exit 1
+          fi  
+       elif [ $1 = "multiply" ]
+       then
+          if [ $COLSM1 -eq $ROWSM2 ] 
+          then
+            # echo -e "main-running multiply()()\n"
+             multiply $matrixFile1 $matrixFile2
+          else
+            echo -e "matrix one columns must equal matrix two rows to multiply\n" >&2
+            exit 1 
+          fi  
+       fi
+    else
+        echo -e "file won't open \n" >&2
+        exit 1
+    fi
+else
+    echo -e "the command ~ $1 ~ is not supported\n" >&2     #catchall for bad command arguments
+    exit 1
+fi     
+
+
+
+
